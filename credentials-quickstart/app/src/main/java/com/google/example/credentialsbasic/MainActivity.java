@@ -22,7 +22,6 @@ import android.support.v7.app.ActionBarActivity;
 import android.support.v7.widget.Toolbar;
 import android.util.Log;
 import android.view.View;
-import android.view.Window;
 import android.widget.EditText;
 import android.widget.Toast;
 
@@ -46,6 +45,7 @@ public class MainActivity extends ActionBarActivity implements
         GoogleApiClient.OnConnectionFailedListener {
 
     private static final String TAG = MainActivity.class.getSimpleName();
+    private static final String KEY_IS_RESOLVING = "is_resolving";
     private static final int RC_SAVE = 1;
     private static final int RC_HINT = 2;
     private static final int RC_READ = 3;
@@ -55,6 +55,7 @@ public class MainActivity extends ActionBarActivity implements
 
     private GoogleApiClient mCredentialsApiClient;
     private Credential mCurrentCredential;
+    private boolean mIsResolving = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -72,6 +73,11 @@ public class MainActivity extends ActionBarActivity implements
         findViewById(R.id.button_load_credentials).setOnClickListener(this);
         findViewById(R.id.button_delete_loaded_credential).setOnClickListener(this);
 
+        // Instance state
+        if (savedInstanceState != null) {
+            mIsResolving = savedInstanceState.getBoolean(KEY_IS_RESOLVING);
+        }
+
         // Instantiate GoogleApiClient.  This is a very simple GoogleApiClient that only connects
         // to the Auth.CREDENTIALS_API, which does not require the user to go through the sign-in
         // flow before connecting.  If you are going to use this API with other Google APIs/scopes
@@ -79,7 +85,7 @@ public class MainActivity extends ActionBarActivity implements
         // the CREDENTIALS_API into its own GoogleApiClient with separate lifecycle listeners.
         mCredentialsApiClient = new GoogleApiClient.Builder(this)
                 .addConnectionCallbacks(this)
-                .addOnConnectionFailedListener(this)
+                .enableAutoManage(this, 0, this)
                 .addApi(Auth.CREDENTIALS_API)
                 .build();
     }
@@ -87,13 +93,15 @@ public class MainActivity extends ActionBarActivity implements
     @Override
     public void onStart() {
         super.onStart();
-        mCredentialsApiClient.connect();
+
+        // Attempt auto-sign in.
+        requestCredentials(false);
     }
 
     @Override
-    public void onStop() {
-        super.onStop();
-        mCredentialsApiClient.disconnect();
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putBoolean(KEY_IS_RESOLVING, mIsResolving);
     }
 
     @Override
@@ -114,6 +122,8 @@ public class MainActivity extends ActionBarActivity implements
                     Log.e(TAG, "Credential Read: NOT OK");
                     showToast("Credential Read Failed");
                 }
+                
+                mIsResolving = false;
                 break;
             case RC_SAVE:
                 if (resultCode == RESULT_OK) {
@@ -123,6 +133,8 @@ public class MainActivity extends ActionBarActivity implements
                     Log.e(TAG, "Credential Save: NOT OK");
                     showToast("Credential Save Failed");
                 }
+
+                mIsResolving = false;
                 break;
         }
     }
@@ -136,7 +148,6 @@ public class MainActivity extends ActionBarActivity implements
     @Override
     public void onConnectionSuspended(int i) {
         Log.d(TAG, "onConnectionSuspended:" + i);
-        mCredentialsApiClient.reconnect();
     }
 
     @Override
@@ -166,7 +177,7 @@ public class MainActivity extends ActionBarActivity implements
         // NOTE: this method unconditionally saves the Credential built, even if all the fields
         // are blank or it is invalid in some other way.  In a real application you should contact
         // your app's back end and determine that the credential is valid before saving it to the
-        // Credentials backend since there is no API to delete an existing Credential.
+        // Credentials backend.
         Auth.CredentialsApi.save(mCredentialsApiClient, credential).setResultCallback(
                 new ResultCallback<Status>() {
                     @Override
@@ -184,14 +195,26 @@ public class MainActivity extends ActionBarActivity implements
 
     /**
      * Called when the Load Credentials button is clicked. Attempts to read the user's saved
-     * Credentials from the Credentials API.
+     * Credentials from the Credentials API.  This may show UX, such as a credential picker
+     * or an account picker.
      *
      * <b>Note:</b> in a normal application loading credentials should happen without explicit user
      * action, this is only connected to a 'Load Credentials' button for easier demonstration
      * in this sample.  Make sure not to load credentials automatically if the user has clicked
-     * a "sign out" button in your application in order to avoid a sign-in loop.
+     * a "sign out" button in your application in order to avoid a sign-in loop. You can do this
+     * with the function <code>Auth.CredentialsApi.disableAuthSignIn(...)</code>.
      */
     private void loadCredentialsClicked() {
+        requestCredentials(true);
+    }
+
+    /**
+     * Request Credentials from the Credentials API.
+     * @param shouldResolveHint true if resolutions for hints should occur. Setting
+     *                          shouldResolveHint to false will not show UI unless there is a known
+     *                          Credential and is therefore appropriate for app start.
+     */
+    private void requestCredentials(final boolean shouldResolveHint) {
         // Request all of the user's saved username/password credentials.  We are not using
         // setAccountTypes so we will not load any credentials from other Identity Providers.
         CredentialRequest request = new CredentialRequest.Builder()
@@ -215,14 +238,22 @@ public class MainActivity extends ActionBarActivity implements
                             // may be asked to pick among multiple credentials if they exist.
                             Status status = credentialRequestResult.getStatus();
                             if (status.getStatusCode() == CommonStatusCodes.SIGN_IN_REQUIRED) {
+                                if (!shouldResolveHint) {
+                                    Log.d(TAG, "requestCredentials: ignoring hint.");
+                                    return;
+                                }
+
                                 // This is a "hint" credential, which will have an ID but not
                                 // a password.  This can be used to populate the username/email
                                 // field of a sign-up form or to initialize other services.
                                 resolveResult(status, RC_HINT);
-                            } else {
+                            } else if (status.getStatusCode() ==
+                                    CommonStatusCodes.RESOLUTION_REQUIRED) {
                                 // This is most likely the case where the user has multiple saved
                                 // credentials and needs to pick one
                                 resolveResult(status, RC_READ);
+                            } else {
+                              Log.w(TAG, "Unexpected status code: " + status.getStatusCode());
                             }
                         }
                     }
@@ -270,11 +301,19 @@ public class MainActivity extends ActionBarActivity implements
      *                    this will be passed back to onActivityResult.
      */
     private void resolveResult(Status status, int requestCode) {
+        // We don't want to fire multiple resolutions at once since that can result
+        // in stacked dialogs after rotation or another similar event.
+        if (mIsResolving) {
+            Log.w(TAG, "resolveResult: already resolving.");
+            return;
+        }
+        
         Log.d(TAG, "Resolving: " + status);
         if (status.hasResolution()) {
             Log.d(TAG, "STATUS: RESOLVING");
             try {
                 status.startResolutionForResult(MainActivity.this, requestCode);
+                mIsResolving = true;
             } catch (IntentSender.SendIntentException e) {
                 Log.e(TAG, "STATUS: Failed to send resolution.", e);
                 hideProgress();
