@@ -95,7 +95,9 @@ public class MainActivity extends ActionBarActivity implements
         super.onStart();
 
         // Attempt auto-sign in.
-        requestCredentials(false);
+        if (!mIsResolving) {
+            requestCredentials(false);
+        }
     }
 
     @Override
@@ -227,12 +229,12 @@ public class MainActivity extends ActionBarActivity implements
                 new ResultCallback<CredentialRequestResult>() {
                     @Override
                     public void onResult(CredentialRequestResult credentialRequestResult) {
+                        hideProgress();
                         if (credentialRequestResult.getStatus().isSuccess()) {
                             // Successfully read the credential without any user interaction, this
                             // means there was only a single credential and the user has auto
                             // sign-in enabled.
                             processRetrievedCredential(credentialRequestResult.getCredential(), false);
-                            hideProgress();
                         } else {
                             // Reading the credential requires a resolution, which means the user
                             // may be asked to pick among multiple credentials if they exist.
@@ -279,9 +281,10 @@ public class MainActivity extends ActionBarActivity implements
                         hideProgress();
                         if (status.isSuccess()) {
                             // Credential delete succeeded, disable the delete button because we
-                            // cannot delete the same credential twice.
+                            // cannot delete the same credential twice. Clear text fields.
                             showToast("Credential Delete Success");
-                            findViewById(R.id.button_delete_loaded_credential).setEnabled(false);
+                            ((EditText) findViewById(R.id.edit_text_email)).setText("");
+                            ((EditText) findViewById(R.id.edit_text_password)).setText("");
                             mCurrentCredential = null;
                         } else {
                             // Credential deletion either failed or was cancelled, this operation
@@ -370,10 +373,17 @@ public class MainActivity extends ActionBarActivity implements
 
     private void showProgress() {
         findViewById(R.id.progress_bar).setVisibility(View.VISIBLE);
+
+        findViewById(R.id.button_load_credentials).setEnabled(false);
+        findViewById(R.id.button_save_credential).setEnabled(false);
+        findViewById(R.id.button_delete_loaded_credential).setEnabled(false);
     }
 
     private void hideProgress() {
         findViewById(R.id.progress_bar).setVisibility(View.INVISIBLE);
+
+        findViewById(R.id.button_load_credentials).setEnabled(true);
+        findViewById(R.id.button_save_credential).setEnabled(true);
     }
 
     @Override
