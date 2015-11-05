@@ -20,7 +20,8 @@
     <string name="action_settings">Settings</string>
     <string name="hint_email">Email</string>
     <string name="hint_password">Password</string>
-    <string name="action_save_credential">Save Credential</string>
-    <string name="load_credentials">Load Credentials</string>
-    <string name="delete_credential">Delete Loaded Credential</string>
+    <string name="action_save_credential">Save\nCredential</string>
+    <string name="load_credentials">Load\nCredentials</string>
+    <string name="delete_credential">Delete\nCredential</string>
+    <string name="load_hint">Load\nHint</string>
 </resources>

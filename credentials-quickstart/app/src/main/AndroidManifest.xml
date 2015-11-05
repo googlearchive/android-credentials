@@ -17,11 +17,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.google.example.credentialsbasic" >
 
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:allowBackup="true"
+        android:fullBackupContent="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:theme="@style/AppTheme" >
+
         <activity
             android:name=".MainActivity"
             android:label="@string/app_name" >
@@ -31,6 +35,10 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".MockServer"
+            android:enabled="true"/>
     </application>
 
 </manifest>

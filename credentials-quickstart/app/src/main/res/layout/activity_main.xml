@@ -14,8 +14,8 @@
  limitations under the License.
 -->
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     tools:context=".MainActivity">
@@ -24,10 +24,10 @@
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:minHeight="?attr/actionBarSize"
         android:background="?attr/colorPrimary"
-        app:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar"
-        app:popupTheme="@style/ThemeOverlay.AppCompat.Light">
+        android:minHeight="?attr/actionBarSize"
+        app:popupTheme="@style/ThemeOverlay.AppCompat.Light"
+        app:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar">
 
         <ProgressBar
             android:id="@+id/progress_bar"
@@ -45,8 +45,8 @@
         android:id="@+id/edit_text_email"
         android:layout_width="@dimen/width_field"
         android:layout_height="wrap_content"
-        android:layout_centerHorizontal="true"
         android:layout_below="@+id/toolbar"
+        android:layout_centerHorizontal="true"
         android:layout_marginTop="20dp"
         android:gravity="center_horizontal"
         android:hint="@string/hint_email"
@@ -62,32 +62,52 @@
         android:hint="@string/hint_password"
         android:inputType="textPassword" />
 
-    <Button
-        android:id="@+id/button_save_credential"
-        android:layout_width="@dimen/width_field"
+    <LinearLayout
+        android:id="@+id/layout_save_delete"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_below="@+id/edit_text_password"
+        android:layout_below="@id/edit_text_password"
         android:layout_centerHorizontal="true"
         android:layout_marginTop="20dp"
-        android:text="@string/action_save_credential" />
+        android:orientation="horizontal">
 
-    <Button
-        android:id="@+id/button_load_credentials"
-        android:layout_width="@dimen/width_field"
+        <Button
+            android:id="@+id/button_save_credential"
+            android:layout_width="150dp"
+            android:layout_height="wrap_content"
+            android:text="@string/action_save_credential" />
+
+        <Button
+            android:id="@+id/button_delete_loaded_credential"
+            android:layout_width="150dp"
+            android:layout_height="wrap_content"
+            android:enabled="false"
+            android:text="@string/delete_credential" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/layout_load"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_below="@id/button_save_credential"
+        android:layout_below="@id/layout_save_delete"
         android:layout_centerHorizontal="true"
-        android:enabled="false"
-        android:text="@string/load_credentials" />
+        android:orientation="horizontal">
 
-    <Button
-        android:id="@+id/button_delete_loaded_credential"
-        android:layout_width="@dimen/width_field"
-        android:layout_height="wrap_content"
-        android:layout_below="@+id/button_load_credentials"
-        android:layout_centerHorizontal="true"
-        android:enabled="false"
-        android:text="@string/delete_credential" />
+        <Button
+            android:id="@+id/button_load_credentials"
+            android:layout_width="150dp"
+            android:layout_height="wrap_content"
+            android:enabled="false"
+            android:text="@string/load_credentials" />
 
+        <Button
+            android:id="@+id/button_load_hint"
+            android:layout_width="150dp"
+            android:layout_height="wrap_content"
+            android:enabled="false"
+            android:text="@string/load_hint" />
+
+    </LinearLayout>
 
 </RelativeLayout>

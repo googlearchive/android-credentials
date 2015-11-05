@@ -15,10 +15,11 @@
  */
 package com.google.example.credentialsbasic;
 
+import android.app.PendingIntent;
 import android.content.Intent;
 import android.content.IntentSender;
 import android.os.Bundle;
-import android.support.v7.app.ActionBarActivity;
+import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
 import android.util.Log;
 import android.view.View;
@@ -27,11 +28,15 @@ import android.widget.Toast;
 
 import com.google.android.gms.auth.api.Auth;
 import com.google.android.gms.auth.api.credentials.Credential;
+import com.google.android.gms.auth.api.credentials.CredentialPickerConfig;
 import com.google.android.gms.auth.api.credentials.CredentialRequest;
 import com.google.android.gms.auth.api.credentials.CredentialRequestResult;
+import com.google.android.gms.auth.api.credentials.HintRequest;
+import com.google.android.gms.auth.api.credentials.IdToken;
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.CommonStatusCodes;
 import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.common.api.ResolvingResultCallbacks;
 import com.google.android.gms.common.api.ResultCallback;
 import com.google.android.gms.common.api.Status;
 
@@ -39,7 +44,7 @@ import com.google.android.gms.common.api.Status;
  * A minimal example of saving and loading username/password credentials from the Credentials API.
  * @author samstern@google.com
  */
-public class MainActivity extends ActionBarActivity implements
+public class MainActivity extends AppCompatActivity implements
         View.OnClickListener,
         GoogleApiClient.ConnectionCallbacks,
         GoogleApiClient.OnConnectionFailedListener {
@@ -71,6 +76,7 @@ public class MainActivity extends ActionBarActivity implements
         // Buttons
         findViewById(R.id.button_save_credential).setOnClickListener(this);
         findViewById(R.id.button_load_credentials).setOnClickListener(this);
+        findViewById(R.id.button_load_hint).setOnClickListener(this);
         findViewById(R.id.button_delete_loaded_credential).setOnClickListener(this);
 
         // Instance state
@@ -85,7 +91,7 @@ public class MainActivity extends ActionBarActivity implements
         // the CREDENTIALS_API into its own GoogleApiClient with separate lifecycle listeners.
         mCredentialsApiClient = new GoogleApiClient.Builder(this)
                 .addConnectionCallbacks(this)
-                .enableAutoManage(this, 0, this)
+                .enableAutoManage(this, this)
                 .addApi(Auth.CREDENTIALS_API)
                 .build();
     }
@@ -96,7 +102,7 @@ public class MainActivity extends ActionBarActivity implements
 
         // Attempt auto-sign in.
         if (!mIsResolving) {
-            requestCredentials(false);
+            requestCredentials();
         }
     }
 
@@ -144,7 +150,7 @@ public class MainActivity extends ActionBarActivity implements
     @Override
     public void onConnected(Bundle bundle) {
         Log.d(TAG, "onConnected");
-        findViewById(R.id.button_load_credentials).setEnabled(true);
+        setViewsEnabled(true, R.id.button_load_credentials, R.id.button_load_hint);
     }
 
     @Override
@@ -155,7 +161,7 @@ public class MainActivity extends ActionBarActivity implements
     @Override
     public void onConnectionFailed(ConnectionResult connectionResult) {
         Log.d(TAG, "onConnectionFailed:" + connectionResult);
-        findViewById(R.id.button_load_credentials).setEnabled(false);
+        setViewsEnabled(false, R.id.button_load_credentials, R.id.button_load_hint);
     }
 
     /**
@@ -180,17 +186,20 @@ public class MainActivity extends ActionBarActivity implements
         // are blank or it is invalid in some other way.  In a real application you should contact
         // your app's back end and determine that the credential is valid before saving it to the
         // Credentials backend.
+        showProgress();
         Auth.CredentialsApi.save(mCredentialsApiClient, credential).setResultCallback(
-                new ResultCallback<Status>() {
+                new ResolvingResultCallbacks<Status>(this, RC_SAVE) {
                     @Override
-                    public void onResult(Status status) {
-                        if (status.isSuccess()) {
-                            Log.d(TAG, "SAVE: OK");
-                            showToast("Credential Saved");
-                            hideProgress();
-                        } else {
-                            resolveResult(status, RC_SAVE);
-                        }
+                    public void onSuccess(Status status) {
+                        showToast("Credential Saved");
+                        hideProgress();
+                    }
+
+                    @Override
+                    public void onUnresolvableFailure(Status status) {
+                        Log.d(TAG, "Save Failed:" + status);
+                        showToast("Credential Save Failed");
+                        hideProgress();
                     }
                 });
     }
@@ -207,16 +216,38 @@ public class MainActivity extends ActionBarActivity implements
      * with the function <code>Auth.CredentialsApi.disableAuthSignIn(...)</code>.
      */
     private void loadCredentialsClicked() {
-        requestCredentials(true);
+        requestCredentials();
+    }
+
+    /**
+     * Called when the Load Hints button is clicked. Requests a Credential "hint" which will
+     * be the basic profile information and an ID token for an account on the device. This is useful
+     * to auto-fill sign-up forms with an email address, picture, and name or to do password-free
+     * authentication with a server by providing an ID Token.
+     */
+    private void loadHintClicked() {
+        HintRequest hintRequest = new HintRequest.Builder()
+                .setHintPickerConfig(new CredentialPickerConfig.Builder()
+                        .setShowCancelButton(true)
+                        .build())
+                .setEmailAddressIdentifierSupported(true)
+                .build();
+
+        PendingIntent intent =
+                Auth.CredentialsApi.getHintPickerIntent(mCredentialsApiClient, hintRequest);
+        try {
+            startIntentSenderForResult(intent.getIntentSender(), RC_HINT, null, 0, 0, 0);
+            mIsResolving = true;
+        } catch (IntentSender.SendIntentException e) {
+            Log.e(TAG, "Could not start hint picker Intent", e);
+            mIsResolving = false;
+        }
     }
 
     /**
      * Request Credentials from the Credentials API.
-     * @param shouldResolveHint true if resolutions for hints should occur. Setting
-     *                          shouldResolveHint to false will not show UI unless there is a known
-     *                          Credential and is therefore appropriate for app start.
      */
-    private void requestCredentials(final boolean shouldResolveHint) {
+    private void requestCredentials() {
         // Request all of the user's saved username/password credentials.  We are not using
         // setAccountTypes so we will not load any credentials from other Identity Providers.
         CredentialRequest request = new CredentialRequest.Builder()
@@ -230,33 +261,18 @@ public class MainActivity extends ActionBarActivity implements
                     @Override
                     public void onResult(CredentialRequestResult credentialRequestResult) {
                         hideProgress();
-                        if (credentialRequestResult.getStatus().isSuccess()) {
+                        Status status = credentialRequestResult.getStatus();
+                        if (status.isSuccess()) {
                             // Successfully read the credential without any user interaction, this
                             // means there was only a single credential and the user has auto
                             // sign-in enabled.
                             processRetrievedCredential(credentialRequestResult.getCredential(), false);
+                        } else if (status.getStatusCode() == CommonStatusCodes.RESOLUTION_REQUIRED) {
+                            // This is most likely the case where the user has multiple saved
+                            // credentials and needs to pick one
+                            resolveResult(status, RC_READ);
                         } else {
-                            // Reading the credential requires a resolution, which means the user
-                            // may be asked to pick among multiple credentials if they exist.
-                            Status status = credentialRequestResult.getStatus();
-                            if (status.getStatusCode() == CommonStatusCodes.SIGN_IN_REQUIRED) {
-                                if (!shouldResolveHint) {
-                                    Log.d(TAG, "requestCredentials: ignoring hint.");
-                                    return;
-                                }
-
-                                // This is a "hint" credential, which will have an ID but not
-                                // a password.  This can be used to populate the username/email
-                                // field of a sign-up form or to initialize other services.
-                                resolveResult(status, RC_HINT);
-                            } else if (status.getStatusCode() ==
-                                    CommonStatusCodes.RESOLUTION_REQUIRED) {
-                                // This is most likely the case where the user has multiple saved
-                                // credentials and needs to pick one
-                                resolveResult(status, RC_READ);
-                            } else {
-                              Log.w(TAG, "Unexpected status code: " + status.getStatusCode());
-                            }
+                            Log.w(TAG, "Unexpected status code: " + status.getStatusCode());
                         }
                     }
                 });
@@ -349,12 +365,22 @@ public class MainActivity extends ActionBarActivity implements
 
         mEmailField.setText(credential.getId());
         mPasswordField.setText(credential.getPassword());
+
+        if (!credential.getIdTokens().isEmpty()) {
+            IdToken idToken = credential.getIdTokens().get(0);
+
+            // For the purposes of this sample we are using a background service in place of a real
+            // web server. The client sends the Id Token to the server which uses the Google
+            // APIs Client Library for Java to verify the token and gain a signed assertion
+            // of the user's email address. This can be used to confirm the user's identity
+            // and sign the user in even without providing a password.
+            Intent intent = new Intent(this, MockServer.class)
+                    .putExtra(MockServer.EXTRA_IDTOKEN, idToken.getIdToken());
+            startService(intent);
+        }
     }
 
-    /**
-     * Converts a password to a series of asterisks the same length as the password, for better
-     * and safer logging.
-     */
+    /** Make a password into asterisks of the right length, for logging. **/
     private String anonymizePassword(String password) {
         if (password == null) {
             return "null";
@@ -367,23 +393,34 @@ public class MainActivity extends ActionBarActivity implements
         return sb.toString();
     }
 
+    /** Display a short Toast message **/
     private void showToast(String msg) {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
     }
 
+    /** Show progress spinner and disable buttons **/
     private void showProgress() {
         findViewById(R.id.progress_bar).setVisibility(View.VISIBLE);
 
-        findViewById(R.id.button_load_credentials).setEnabled(false);
-        findViewById(R.id.button_save_credential).setEnabled(false);
-        findViewById(R.id.button_delete_loaded_credential).setEnabled(false);
+        // Disable all buttons while progress indicator shows.
+        setViewsEnabled(false, R.id.button_load_credentials, R.id.button_load_hint,
+                R.id.button_save_credential, R.id.button_delete_loaded_credential);
     }
 
+    /** Hide progress spinner and enable buttons **/
     private void hideProgress() {
         findViewById(R.id.progress_bar).setVisibility(View.INVISIBLE);
 
-        findViewById(R.id.button_load_credentials).setEnabled(true);
-        findViewById(R.id.button_save_credential).setEnabled(true);
+        // Enable buttons once progress indicator is hidden.
+        setViewsEnabled(true, R.id.button_load_credentials, R.id.button_load_hint,
+                R.id.button_save_credential);
+    }
+
+    /** Enable or disable multiple views **/
+    private void setViewsEnabled(boolean enabled, int... ids) {
+        for (int id : ids) {
+            findViewById(id).setEnabled(enabled);
+        }
     }
 
     @Override
@@ -395,11 +432,12 @@ public class MainActivity extends ActionBarActivity implements
             case R.id.button_load_credentials:
                 loadCredentialsClicked();
                 break;
+            case R.id.button_load_hint:
+                loadHintClicked();
+                break;
             case R.id.button_delete_loaded_credential:
                 deleteLoadedCredentialClicked();
                 break;
         }
     }
-
-
 }
