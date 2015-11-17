@@ -44,11 +44,12 @@ import com.google.android.gms.common.api.Status;
 
 public class MainActivity extends AppCompatActivity implements
         GoogleApiClient.OnConnectionFailedListener,
-        View.OnClickListener {
+        View.OnClickListener, GoogleApiClient.ConnectionCallbacks {
 
     private static final String TAG = "MainActivity";
     private static final String KEY_IS_RESOLVING = "is_resolving";
     private static final String KEY_CREDENTIAL = "key_credential";
+    private static final String KEY_CREDENTIAL_TO_SAVE = "key_credential_to_save";
 
     private static final int RC_SIGN_IN = 1;
     private static final int RC_CREDENTIALS_READ = 2;
@@ -58,6 +59,7 @@ public class MainActivity extends AppCompatActivity implements
     private ProgressDialog mProgressDialog;
     private boolean mIsResolving = false;
     private Credential mCredential;
+    private Credential mCredentialToSave;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -67,6 +69,7 @@ public class MainActivity extends AppCompatActivity implements
         if (savedInstanceState != null) {
             mIsResolving = savedInstanceState.getBoolean(KEY_IS_RESOLVING, false);
             mCredential = savedInstanceState.getParcelable(KEY_CREDENTIAL);
+            mCredentialToSave = savedInstanceState.getParcelable(KEY_CREDENTIAL_TO_SAVE);
         }
 
         // Build GoogleApiClient, don't set account name
@@ -97,6 +100,7 @@ public class MainActivity extends AppCompatActivity implements
         }
 
         GoogleApiClient.Builder builder = new GoogleApiClient.Builder(this)
+                .addConnectionCallbacks(this)
                 .enableAutoManage(this, this)
                 .addApi(Auth.CREDENTIALS_API)
                 .addApi(Auth.GOOGLE_SIGN_IN_API, gsoBuilder.build());
@@ -108,6 +112,8 @@ public class MainActivity extends AppCompatActivity implements
     public void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
         outState.putBoolean(KEY_IS_RESOLVING, mIsResolving);
+        outState.putParcelable(KEY_CREDENTIAL, mCredential);
+        outState.putParcelable(KEY_CREDENTIAL_TO_SAVE, mCredentialToSave);
     }
 
     @Override
@@ -141,6 +147,14 @@ public class MainActivity extends AppCompatActivity implements
             }
         }
     }
+
+    @Override
+    public void onConnected(Bundle bundle) {
+        saveGoogleCredential(mCredentialToSave);
+    }
+
+    @Override
+    public void onConnectionSuspended(int i) {}
 
     @Override
     public void onConnectionFailed(ConnectionResult connectionResult) {
@@ -200,16 +214,7 @@ public class MainActivity extends AppCompatActivity implements
                     .setProfilePictureUri(gsa.getPhotoUrl())
                     .build();
 
-            Auth.CredentialsApi.save(mGoogleApiClient, credential).setResultCallback(
-                    new ResultCallback<Status>() {
-                        @Override
-                        public void onResult(Status status) {
-                            // This save should never need resolving because the Google Account
-                            // must correspond to an account on the device, so it should succeed
-                            // without prompt.
-                            Log.d(TAG, "Save Google Credential: " + status);
-                        }
-                    });
+            saveGoogleCredential(credential);
         } else {
             // Display signed-out UI
             ((TextView) findViewById(R.id.text_google_status)).setText(R.string.signed_out);
@@ -258,6 +263,25 @@ public class MainActivity extends AppCompatActivity implements
                 mIsResolving = false;
             }
         }
+    }
+
+    private void saveGoogleCredential(Credential credential) {
+        if (credential == null) {
+            return;
+        }
+
+        mCredentialToSave = credential;
+        Auth.CredentialsApi.save(mGoogleApiClient, credential).setResultCallback(
+                new ResultCallback<Status>() {
+                    @Override
+                    public void onResult(Status status) {
+                        // This save should never need resolving because the Google Account
+                        // must correspond to an account on the device, so it should succeed
+                        // without prompt.
+                        Log.d(TAG, "Save Google Credential: " + status);
+                        mCredentialToSave = null;
+                    }
+                });
     }
 
     private void onGoogleSignInClicked() {
