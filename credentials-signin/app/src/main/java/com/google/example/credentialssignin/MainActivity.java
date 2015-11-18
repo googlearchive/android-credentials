@@ -39,6 +39,7 @@ import com.google.android.gms.common.SignInButton;
 import com.google.android.gms.common.api.CommonStatusCodes;
 import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.common.api.OptionalPendingResult;
+import com.google.android.gms.common.api.ResolvingResultCallbacks;
 import com.google.android.gms.common.api.ResultCallback;
 import com.google.android.gms.common.api.Status;
 
@@ -150,7 +151,7 @@ public class MainActivity extends AppCompatActivity implements
 
     @Override
     public void onConnected(Bundle bundle) {
-        saveGoogleCredential(mCredentialToSave);
+        saveCredentialIfConnected(mCredentialToSave);
     }
 
     @Override
@@ -214,7 +215,7 @@ public class MainActivity extends AppCompatActivity implements
                     .setProfilePictureUri(gsa.getPhotoUrl())
                     .build();
 
-            saveGoogleCredential(credential);
+            saveCredentialIfConnected(credential);
         } else {
             // Display signed-out UI
             ((TextView) findViewById(R.id.text_google_status)).setText(R.string.signed_out);
@@ -265,23 +266,30 @@ public class MainActivity extends AppCompatActivity implements
         }
     }
 
-    private void saveGoogleCredential(Credential credential) {
+    private void saveCredentialIfConnected(Credential credential) {
         if (credential == null) {
             return;
         }
 
+        // Save Credential if the GoogleApiClient is connected, otherwise the
+        // Credential is cached and will be saved when onConnected is next called.
         mCredentialToSave = credential;
-        Auth.CredentialsApi.save(mGoogleApiClient, credential).setResultCallback(
-                new ResultCallback<Status>() {
-                    @Override
-                    public void onResult(Status status) {
-                        // This save should never need resolving because the Google Account
-                        // must correspond to an account on the device, so it should succeed
-                        // without prompt.
-                        Log.d(TAG, "Save Google Credential: " + status);
-                        mCredentialToSave = null;
-                    }
-                });
+        if (mGoogleApiClient.isConnected()) {
+            Auth.CredentialsApi.save(mGoogleApiClient, mCredentialToSave).setResultCallback(
+                    new ResolvingResultCallbacks<Status>(this, RC_CREDENTIALS_SAVE) {
+                        @Override
+                        public void onSuccess(Status status) {
+                            Log.d(TAG, "save:SUCCESS:" + status);
+                            mCredentialToSave = null;
+                        }
+
+                        @Override
+                        public void onUnresolvableFailure(Status status) {
+                            Log.w(TAG, "save:FAILURE:" + status);
+                            mCredentialToSave = null;
+                        }
+                    });
+        }
     }
 
     private void onGoogleSignInClicked() {
@@ -331,19 +339,7 @@ public class MainActivity extends AppCompatActivity implements
                 .setPassword(password)
                 .build();
 
-        showProgress();
-        Auth.CredentialsApi.save(mGoogleApiClient, credential).setResultCallback(
-                new ResultCallback<Status>() {
-                    @Override
-                    public void onResult(Status status) {
-                        hideProgress();
-                        if (status.isSuccess()) {
-                            Toast.makeText(MainActivity.this, "Saved", Toast.LENGTH_SHORT).show();
-                        } else if (status.hasResolution()) {
-                            resolveResult(status, RC_CREDENTIALS_SAVE);
-                        }
-                    }
-                });
+        saveCredentialIfConnected(credential);
     }
 
     @Override
