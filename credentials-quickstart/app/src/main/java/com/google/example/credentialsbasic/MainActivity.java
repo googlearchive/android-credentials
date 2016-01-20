@@ -33,6 +33,7 @@ import com.google.android.gms.auth.api.credentials.CredentialRequest;
 import com.google.android.gms.auth.api.credentials.CredentialRequestResult;
 import com.google.android.gms.auth.api.credentials.HintRequest;
 import com.google.android.gms.auth.api.credentials.IdToken;
+import com.google.android.gms.auth.api.credentials.IdentityProviders;
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.CommonStatusCodes;
 import com.google.android.gms.common.api.GoogleApiClient;
@@ -231,6 +232,7 @@ public class MainActivity extends AppCompatActivity implements
                         .setShowCancelButton(true)
                         .build())
                 .setEmailAddressIdentifierSupported(true)
+                .setAccountTypes(IdentityProviders.GOOGLE)
                 .build();
 
         PendingIntent intent =
@@ -377,6 +379,8 @@ public class MainActivity extends AppCompatActivity implements
             Intent intent = new Intent(this, MockServer.class)
                     .putExtra(MockServer.EXTRA_IDTOKEN, idToken.getIdToken());
             startService(intent);
+        } else {
+            Log.d(TAG, "Credential does not contain ID Tokens.");
         }
     }
 
