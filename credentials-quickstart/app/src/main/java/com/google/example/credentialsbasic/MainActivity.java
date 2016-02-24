@@ -273,6 +273,9 @@ public class MainActivity extends AppCompatActivity implements
                             // This is most likely the case where the user has multiple saved
                             // credentials and needs to pick one
                             resolveResult(status, RC_READ);
+                        } else if (status.getStatusCode() == CommonStatusCodes.SIGN_IN_REQUIRED) {
+                            // This means only a hint is available, but we are handling that
+                            // elsewhere so no need to act here.
                         } else {
                             Log.w(TAG, "Unexpected status code: " + status.getStatusCode());
                         }
