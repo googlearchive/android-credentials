@@ -253,7 +253,7 @@ public class MainActivity extends AppCompatActivity implements
         // Request all of the user's saved username/password credentials.  We are not using
         // setAccountTypes so we will not load any credentials from other Identity Providers.
         CredentialRequest request = new CredentialRequest.Builder()
-                .setSupportsPasswordLogin(true)
+                .setPasswordLoginSupported(true)
                 .build();
 
         showProgress();
