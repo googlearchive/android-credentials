@@ -19,10 +19,12 @@ import android.app.PendingIntent;
 import android.content.Intent;
 import android.content.IntentSender;
 import android.os.Bundle;
+import android.support.annotation.NonNull;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
 import android.util.Log;
 import android.view.View;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.Toast;
 
@@ -160,7 +162,7 @@ public class MainActivity extends AppCompatActivity implements
     }
 
     @Override
-    public void onConnectionFailed(ConnectionResult connectionResult) {
+    public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
         Log.d(TAG, "onConnectionFailed:" + connectionResult);
         setViewsEnabled(false, R.id.button_load_credentials, R.id.button_load_hint);
     }
@@ -191,13 +193,13 @@ public class MainActivity extends AppCompatActivity implements
         Auth.CredentialsApi.save(mCredentialsApiClient, credential).setResultCallback(
                 new ResolvingResultCallbacks<Status>(this, RC_SAVE) {
                     @Override
-                    public void onSuccess(Status status) {
+                    public void onSuccess(@NonNull Status status) {
                         showToast("Credential Saved");
                         hideProgress();
                     }
 
                     @Override
-                    public void onUnresolvableFailure(Status status) {
+                    public void onUnresolvableFailure(@NonNull Status status) {
                         Log.d(TAG, "Save Failed:" + status);
                         showToast("Credential Save Failed");
                         hideProgress();
@@ -231,6 +233,7 @@ public class MainActivity extends AppCompatActivity implements
                 .setHintPickerConfig(new CredentialPickerConfig.Builder()
                         .setShowCancelButton(true)
                         .build())
+                .setIdTokenRequested(shouldRequestIdToken())
                 .setEmailAddressIdentifierSupported(true)
                 .setAccountTypes(IdentityProviders.GOOGLE)
                 .build();
@@ -254,6 +257,7 @@ public class MainActivity extends AppCompatActivity implements
         // setAccountTypes so we will not load any credentials from other Identity Providers.
         CredentialRequest request = new CredentialRequest.Builder()
                 .setPasswordLoginSupported(true)
+                .setIdTokenRequested(shouldRequestIdToken())
                 .build();
 
         showProgress();
@@ -261,7 +265,7 @@ public class MainActivity extends AppCompatActivity implements
         Auth.CredentialsApi.request(mCredentialsApiClient, request).setResultCallback(
                 new ResultCallback<CredentialRequestResult>() {
                     @Override
-                    public void onResult(CredentialRequestResult credentialRequestResult) {
+                    public void onResult(@NonNull CredentialRequestResult credentialRequestResult) {
                         hideProgress();
                         Status status = credentialRequestResult.getStatus();
                         if (status.isSuccess()) {
@@ -298,7 +302,7 @@ public class MainActivity extends AppCompatActivity implements
         Auth.CredentialsApi.delete(mCredentialsApiClient, mCurrentCredential).setResultCallback(
                 new ResultCallback<Status>() {
                     @Override
-                    public void onResult(Status status) {
+                    public void onResult(@NonNull Status status) {
                         hideProgress();
                         if (status.isSuccess()) {
                             // Credential delete succeeded, disable the delete button because we
@@ -385,6 +389,15 @@ public class MainActivity extends AppCompatActivity implements
         } else {
             Log.d(TAG, "Credential does not contain ID Tokens.");
         }
+    }
+
+    /**
+     * Determine if we should request an ID token with Hints/Credentials. The default behavior
+     * is to not request an ID token (for speed purposes) but by setting this value to true
+     * an ID token will be returned with Hints/Credentials when possible.
+     */
+    private boolean shouldRequestIdToken() {
+        return ((CheckBox) findViewById(R.id.checkbox_request_idtoken)).isChecked();
     }
 
     /** Make a password into asterisks of the right length, for logging. **/

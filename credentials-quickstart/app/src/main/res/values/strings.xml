@@ -24,4 +24,5 @@
     <string name="load_credentials">Load\nCredentials</string>
     <string name="delete_credential">Delete\nCredential</string>
     <string name="load_hint">Load\nHint</string>
+    <string name="label_request_id_token">Request ID Token:</string>
 </resources>

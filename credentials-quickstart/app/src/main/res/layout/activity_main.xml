@@ -110,4 +110,24 @@
 
     </LinearLayout>
 
+    <LinearLayout
+        android:layout_below="@+id/layout_load"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerHorizontal="true"
+        android:orientation="horizontal">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/label_request_id_token"/>
+
+        <CheckBox
+            android:id="@+id/checkbox_request_idtoken"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:checked="true"/>
+    </LinearLayout>
+
+
 </RelativeLayout>
