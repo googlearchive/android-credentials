@@ -59,7 +59,7 @@ public class PhoneNumberVerifier extends Service {
     private NotificationCompat.Builder notification;
     private PrefsHelper prefs;
     private ApiHelper api;
-    private SmsBrReceiver smsReciever;
+    private SmsBrReceiver smsReceiver;
 
     private static boolean isRunning;
 
@@ -88,17 +88,16 @@ public class PhoneNumberVerifier extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
-        if (smsReciever == null) {
-            smsReciever = new SmsBrReceiver();
+        if (smsReceiver == null) {
+            smsReceiver = new SmsBrReceiver();
         }
 
         prefs = new PrefsHelper(this);
         smsRetrieverClient = SmsRetriever.getClient(this);
-        Task<Void> task = smsRetrieverClient.startSmsRetriever();
 
         IntentFilter intentFilter = new IntentFilter();
         intentFilter.addAction(SmsRetriever.SMS_RETRIEVED_ACTION);
-        getApplicationContext().registerReceiver(smsReciever, intentFilter);
+        getApplicationContext().registerReceiver(smsReceiver, intentFilter);
         api = new ApiHelper(this);
     }
 
@@ -107,10 +106,10 @@ public class PhoneNumberVerifier extends Service {
         super.onDestroy();
         isRunning = false;
         isVerifying = false;
-        if (smsReciever != null) {
-            getApplicationContext().unregisterReceiver(smsReciever);
-            smsReciever.cancelTimeout();
-            smsReciever = null;
+        if (smsReceiver != null) {
+            getApplicationContext().unregisterReceiver(smsReceiver);
+            smsReceiver.cancelTimeout();
+            smsReceiver = null;
         }
         if (!prefs.getVerified(false)) {
             // We're not verifying anything if this is stopped
@@ -181,7 +180,7 @@ public class PhoneNumberVerifier extends Service {
         task.addOnSuccessListener(new OnSuccessListener<Void>() {
             @Override
             public void onSuccess(Void aVoid) {
-                smsReciever.setTimeout();
+                smsReceiver.setTimeout();
                 notifyStatus(STATUS_REQUEST_SENT, null);
                 Log.d(TAG, "SmsRetrievalResult status: Success");
                 Toast.makeText(PhoneNumberVerifier.this, getString(R.string.verifier_registered),
@@ -315,7 +314,7 @@ public class PhoneNumberVerifier extends Service {
 
             String action = intent.getAction();
             if (SmsRetriever.SMS_RETRIEVED_ACTION.equals(action)) {
-                smsReciever.cancelTimeout();
+                cancelTimeout();
                 notifyStatus(STATUS_RESPONSE_RECEIVED, null);
                 Bundle extras = intent.getExtras();
                 Status status = (Status) extras.get(SmsRetriever.EXTRA_STATUS);
