@@ -387,6 +387,8 @@ public class MainActivity extends AppCompatActivity implements
                     .putExtra(MockServer.EXTRA_IDTOKEN, idToken.getIdToken());
             startService(intent);
         } else {
+            // This state is reached if non-Google accounts are added to Gmail:
+            // https://support.google.com/mail/answer/6078445
             Log.d(TAG, "Credential does not contain ID Tokens.");
         }
     }
