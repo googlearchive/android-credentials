@@ -19,6 +19,7 @@ import android.app.ProgressDialog;
 import android.content.Intent;
 import android.content.IntentSender;
 import android.os.Bundle;
+import android.support.annotation.NonNull;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.View;
@@ -26,26 +27,23 @@ import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.google.android.gms.auth.api.Auth;
 import com.google.android.gms.auth.api.credentials.Credential;
 import com.google.android.gms.auth.api.credentials.CredentialRequest;
-import com.google.android.gms.auth.api.credentials.CredentialRequestResult;
+import com.google.android.gms.auth.api.credentials.CredentialRequestResponse;
+import com.google.android.gms.auth.api.credentials.Credentials;
+import com.google.android.gms.auth.api.credentials.CredentialsClient;
 import com.google.android.gms.auth.api.credentials.IdentityProviders;
+import com.google.android.gms.auth.api.signin.GoogleSignIn;
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount;
+import com.google.android.gms.auth.api.signin.GoogleSignInClient;
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions;
-import com.google.android.gms.auth.api.signin.GoogleSignInResult;
-import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.SignInButton;
-import com.google.android.gms.common.api.CommonStatusCodes;
-import com.google.android.gms.common.api.GoogleApiClient;
-import com.google.android.gms.common.api.OptionalPendingResult;
-import com.google.android.gms.common.api.ResolvingResultCallbacks;
-import com.google.android.gms.common.api.ResultCallback;
-import com.google.android.gms.common.api.Status;
+import com.google.android.gms.common.api.ResolvableApiException;
+import com.google.android.gms.tasks.OnCompleteListener;
+import com.google.android.gms.tasks.Task;
 
 public class MainActivity extends AppCompatActivity implements
-        GoogleApiClient.OnConnectionFailedListener,
-        View.OnClickListener, GoogleApiClient.ConnectionCallbacks {
+        View.OnClickListener {
 
     private static final String TAG = "MainActivity";
     private static final String KEY_IS_RESOLVING = "is_resolving";
@@ -56,11 +54,11 @@ public class MainActivity extends AppCompatActivity implements
     private static final int RC_CREDENTIALS_READ = 2;
     private static final int RC_CREDENTIALS_SAVE = 3;
 
-    private GoogleApiClient mGoogleApiClient;
+    private CredentialsClient mCredentialsClient;
+    private GoogleSignInClient mSignInClient;
     private ProgressDialog mProgressDialog;
     private boolean mIsResolving = false;
     private Credential mCredential;
-    private Credential mCredentialToSave;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -70,11 +68,10 @@ public class MainActivity extends AppCompatActivity implements
         if (savedInstanceState != null) {
             mIsResolving = savedInstanceState.getBoolean(KEY_IS_RESOLVING, false);
             mCredential = savedInstanceState.getParcelable(KEY_CREDENTIAL);
-            mCredentialToSave = savedInstanceState.getParcelable(KEY_CREDENTIAL_TO_SAVE);
         }
 
-        // Build GoogleApiClient, don't set account name
-        buildGoogleApiClient(null);
+        // Build CredentialsClient and GoogleSignInClient, don't set account name
+        buildClients(null);
 
         // Sign in button
         SignInButton signInButton = (SignInButton) findViewById(R.id.button_google_sign_in);
@@ -88,7 +85,7 @@ public class MainActivity extends AppCompatActivity implements
         findViewById(R.id.button_email_save).setOnClickListener(this);
     }
 
-    private void buildGoogleApiClient(String accountName) {
+    private void buildClients(String accountName) {
         GoogleSignInOptions.Builder gsoBuilder = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
                 .requestEmail();
 
@@ -96,17 +93,8 @@ public class MainActivity extends AppCompatActivity implements
             gsoBuilder.setAccountName(accountName);
         }
 
-        if (mGoogleApiClient != null) {
-            mGoogleApiClient.stopAutoManage(this);
-        }
-
-        GoogleApiClient.Builder builder = new GoogleApiClient.Builder(this)
-                .addConnectionCallbacks(this)
-                .enableAutoManage(this, this)
-                .addApi(Auth.CREDENTIALS_API)
-                .addApi(Auth.GOOGLE_SIGN_IN_API, gsoBuilder.build());
-
-        mGoogleApiClient = builder.build();
+        mCredentialsClient = Credentials.getClient(this);
+        mSignInClient = GoogleSignIn.getClient(this, gsoBuilder.build());
     }
 
     @Override
@@ -114,7 +102,6 @@ public class MainActivity extends AppCompatActivity implements
         super.onSaveInstanceState(outState);
         outState.putBoolean(KEY_IS_RESOLVING, mIsResolving);
         outState.putParcelable(KEY_CREDENTIAL, mCredential);
-        outState.putParcelable(KEY_CREDENTIAL_TO_SAVE, mCredentialToSave);
     }
 
     @Override
@@ -131,8 +118,8 @@ public class MainActivity extends AppCompatActivity implements
         Log.d(TAG, "onActivityResult:" + requestCode + ":" + resultCode + ":" + data);
 
         if (requestCode == RC_SIGN_IN) {
-            GoogleSignInResult gsr = Auth.GoogleSignInApi.getSignInResultFromIntent(data);
-            handleGoogleSignIn(gsr);
+            Task<GoogleSignInAccount> task = GoogleSignIn.getSignedInAccountFromIntent(data);
+            handleGoogleSignIn(task);
         } else if (requestCode == RC_CREDENTIALS_READ) {
             mIsResolving = false;
             if (resultCode == RESULT_OK) {
@@ -149,37 +136,23 @@ public class MainActivity extends AppCompatActivity implements
         }
     }
 
-    @Override
-    public void onConnected(Bundle bundle) {
-        saveCredentialIfConnected(mCredentialToSave);
-    }
-
-    @Override
-    public void onConnectionSuspended(int i) {}
-
-    @Override
-    public void onConnectionFailed(ConnectionResult connectionResult) {
-        Log.w(TAG, "onConnectionFailed:" + connectionResult);
-        Toast.makeText(this, "An error has occurred.", Toast.LENGTH_SHORT).show();
-    }
-
     private void googleSilentSignIn() {
         // Try silent sign-in with Google Sign In API
-        OptionalPendingResult<GoogleSignInResult> opr =
-                Auth.GoogleSignInApi.silentSignIn(mGoogleApiClient);
-        if (opr.isDone()) {
-            GoogleSignInResult gsr = opr.get();
-            handleGoogleSignIn(gsr);
-        } else {
-            showProgress();
-            opr.setResultCallback(new ResultCallback<GoogleSignInResult>() {
-                @Override
-                public void onResult(GoogleSignInResult googleSignInResult) {
-                    hideProgress();
-                    handleGoogleSignIn(googleSignInResult);
-                }
-            });
+        Task<GoogleSignInAccount> silentSignIn = mSignInClient.silentSignIn();
+
+        if (silentSignIn.isComplete() && silentSignIn.isSuccessful()) {
+            handleGoogleSignIn(silentSignIn);
+            return;
         }
+
+        showProgress();
+        silentSignIn.addOnCompleteListener(new OnCompleteListener<GoogleSignInAccount>() {
+            @Override
+            public void onComplete(@NonNull Task<GoogleSignInAccount> task) {
+                hideProgress();
+                handleGoogleSignIn(task);
+            }
+        });
     }
 
     private void handleCredential(Credential credential) {
@@ -188,7 +161,7 @@ public class MainActivity extends AppCompatActivity implements
         Log.d(TAG, "handleCredential:" + credential.getAccountType() + ":" + credential.getId());
         if (IdentityProviders.GOOGLE.equals(credential.getAccountType())) {
             // Google account, rebuild GoogleApiClient to set account name and then try
-            buildGoogleApiClient(credential.getId());
+            buildClients(credential.getId());
             googleSilentSignIn();
         } else {
             // Email/password account
@@ -197,13 +170,13 @@ public class MainActivity extends AppCompatActivity implements
         }
     }
 
-    private void handleGoogleSignIn(GoogleSignInResult gsr) {
-        Log.d(TAG, "handleGoogleSignIn:" + (gsr == null ? "null" : gsr.getStatus()));
+    private void handleGoogleSignIn(Task<GoogleSignInAccount> completedTask) {
+        Log.d(TAG, "handleGoogleSignIn:" + completedTask);
 
-        boolean isSignedIn = (gsr != null) && gsr.isSuccess();
+        boolean isSignedIn = (completedTask != null) && completedTask.isSuccessful();
         if (isSignedIn) {
             // Display signed-in UI
-            GoogleSignInAccount gsa = gsr.getSignInAccount();
+            GoogleSignInAccount gsa = completedTask.getResult();
             String status = String.format("Signed in as %s (%s)", gsa.getDisplayName(),
                     gsa.getEmail());
             ((TextView) findViewById(R.id.text_google_status)).setText(status);
@@ -215,7 +188,7 @@ public class MainActivity extends AppCompatActivity implements
                     .setProfilePictureUri(gsa.getPhotoUrl())
                     .build();
 
-            saveCredentialIfConnected(credential);
+            saveCredential(credential);
         } else {
             // Display signed-out UI
             ((TextView) findViewById(R.id.text_google_status)).setText(R.string.signed_out);
@@ -235,29 +208,34 @@ public class MainActivity extends AppCompatActivity implements
         }
 
         showProgress();
-        Auth.CredentialsApi.request(mGoogleApiClient, crBuilder.build()).setResultCallback(
-                new ResultCallback<CredentialRequestResult>() {
+        mCredentialsClient.request(crBuilder.build()).addOnCompleteListener(
+                new OnCompleteListener<CredentialRequestResponse>() {
                     @Override
-                    public void onResult(CredentialRequestResult credentialRequestResult) {
+                    public void onComplete(@NonNull Task<CredentialRequestResponse> task) {
                         hideProgress();
-                        Status status = credentialRequestResult.getStatus();
 
-                        if (status.isSuccess()) {
+                        if (task.isSuccessful()) {
                             // Auto sign-in success
-                            handleCredential(credentialRequestResult.getCredential());
-                        } else if (status.getStatusCode() == CommonStatusCodes.RESOLUTION_REQUIRED
-                                && shouldResolve) {
+                            handleCredential(task.getResult().getCredential());
+                            return;
+                        }
+
+                        Exception e = task.getException();
+                        if (e instanceof ResolvableApiException && shouldResolve) {
                             // Getting credential needs to show some UI, start resolution
-                            resolveResult(status, RC_CREDENTIALS_READ);
+                            ResolvableApiException rae = (ResolvableApiException) e;
+                            resolveResult(rae, RC_CREDENTIALS_READ);
+                        } else {
+                            Log.w(TAG, "request: not handling exception", e);
                         }
                     }
                 });
     }
 
-    private void resolveResult(Status status, int requestCode) {
+    private void resolveResult(ResolvableApiException rae, int requestCode) {
         if (!mIsResolving) {
             try {
-                status.startResolutionForResult(MainActivity.this, requestCode);
+                rae.startResolutionForResult(MainActivity.this, requestCode);
                 mIsResolving = true;
             } catch (IntentSender.SendIntentException e) {
                 Log.e(TAG, "Failed to send Credentials intent.", e);
@@ -266,56 +244,61 @@ public class MainActivity extends AppCompatActivity implements
         }
     }
 
-    private void saveCredentialIfConnected(Credential credential) {
+    private void saveCredential(Credential credential) {
         if (credential == null) {
+            Log.w(TAG, "Ignoring null credential.");
             return;
         }
 
-        // Save Credential if the GoogleApiClient is connected, otherwise the
-        // Credential is cached and will be saved when onConnected is next called.
-        mCredentialToSave = credential;
-        if (mGoogleApiClient.isConnected()) {
-            Auth.CredentialsApi.save(mGoogleApiClient, mCredentialToSave).setResultCallback(
-                    new ResolvingResultCallbacks<Status>(this, RC_CREDENTIALS_SAVE) {
-                        @Override
-                        public void onSuccess(Status status) {
-                            Log.d(TAG, "save:SUCCESS:" + status);
-                            mCredentialToSave = null;
+        mCredentialsClient.save(mCredential).addOnCompleteListener(
+                new OnCompleteListener<Void>() {
+                    @Override
+                    public void onComplete(@NonNull Task<Void> task) {
+                        if (task.isSuccessful()) {
+                            Log.d(TAG, "save:SUCCESS");
+                            return;
                         }
 
-                        @Override
-                        public void onUnresolvableFailure(Status status) {
-                            Log.w(TAG, "save:FAILURE:" + status);
-                            mCredentialToSave = null;
+                        Exception e = task.getException();
+                        if (e instanceof ResolvableApiException) {
+                            // Saving the credential can sometimes require showing some UI
+                            // to the user, which means we need to fire this resolution.
+                            ResolvableApiException rae = (ResolvableApiException) e;
+                            resolveResult(rae, RC_CREDENTIALS_SAVE);
+                        } else {
+                            Log.w(TAG, "save:FAILURE", e);
+                            Toast.makeText(MainActivity.this,
+                                    "Unexpected error, see logs for detals",
+                                    Toast.LENGTH_SHORT).show();
                         }
-                    });
-        }
+                    }
+                });
     }
 
     private void onGoogleSignInClicked() {
-        Intent intent = Auth.GoogleSignInApi.getSignInIntent(mGoogleApiClient);
+        Intent intent = mSignInClient.getSignInIntent();
         startActivityForResult(intent, RC_SIGN_IN);
     }
 
     private void onGoogleRevokeClicked() {
         if (mCredential != null) {
-            Auth.CredentialsApi.delete(mGoogleApiClient, mCredential);
+            mCredentialsClient.delete(mCredential);
         }
-        Auth.GoogleSignInApi.revokeAccess(mGoogleApiClient).setResultCallback(
-                new ResultCallback<Status>() {
+        mSignInClient.revokeAccess().addOnCompleteListener(
+                new OnCompleteListener<Void>() {
                     @Override
-                    public void onResult(Status status) {
+                    public void onComplete(@NonNull Task<Void> task) {
                         handleGoogleSignIn(null);
                     }
                 });
     }
 
     private void onGoogleSignOutClicked() {
-        Auth.CredentialsApi.disableAutoSignIn(mGoogleApiClient);
-        Auth.GoogleSignInApi.signOut(mGoogleApiClient).setResultCallback(
-                new ResultCallback<Status>() {
+        mCredentialsClient.disableAutoSignIn();
+        mSignInClient.signOut().addOnCompleteListener(
+                new OnCompleteListener<Void>() {
                     @Override
-                    public void onResult(Status status) {
+                    public void onComplete(@NonNull Task<Void> task) {
                         handleGoogleSignIn(null);
                     }
                 });
@@ -339,7 +322,7 @@ public class MainActivity extends AppCompatActivity implements
                 .setPassword(password)
                 .build();
 
-        saveCredentialIfConnected(credential);
+        saveCredential(credential);
     }
 
     @Override
