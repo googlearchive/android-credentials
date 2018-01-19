@@ -98,14 +98,14 @@
             android:id="@+id/button_load_credentials"
             android:layout_width="150dp"
             android:layout_height="wrap_content"
-            android:enabled="false"
+            android:enabled="true"
             android:text="@string/load_credentials" />
 
         <Button
             android:id="@+id/button_load_hint"
             android:layout_width="150dp"
             android:layout_height="wrap_content"
-            android:enabled="false"
+            android:enabled="true"
             android:text="@string/load_hint" />
 
     </LinearLayout>

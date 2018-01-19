@@ -28,29 +28,28 @@ import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.Toast;
 
-import com.google.android.gms.auth.api.Auth;
 import com.google.android.gms.auth.api.credentials.Credential;
 import com.google.android.gms.auth.api.credentials.CredentialPickerConfig;
 import com.google.android.gms.auth.api.credentials.CredentialRequest;
-import com.google.android.gms.auth.api.credentials.CredentialRequestResult;
+import com.google.android.gms.auth.api.credentials.CredentialRequestResponse;
+import com.google.android.gms.auth.api.credentials.Credentials;
+import com.google.android.gms.auth.api.credentials.CredentialsClient;
+import com.google.android.gms.auth.api.credentials.CredentialsOptions;
 import com.google.android.gms.auth.api.credentials.HintRequest;
 import com.google.android.gms.auth.api.credentials.IdToken;
 import com.google.android.gms.auth.api.credentials.IdentityProviders;
-import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.api.ApiException;
 import com.google.android.gms.common.api.CommonStatusCodes;
-import com.google.android.gms.common.api.GoogleApiClient;
-import com.google.android.gms.common.api.ResolvingResultCallbacks;
-import com.google.android.gms.common.api.ResultCallback;
-import com.google.android.gms.common.api.Status;
+import com.google.android.gms.common.api.ResolvableApiException;
+import com.google.android.gms.tasks.OnCompleteListener;
+import com.google.android.gms.tasks.Task;
 
 /**
  * A minimal example of saving and loading username/password credentials from the Credentials API.
  * @author samstern@google.com
  */
 public class MainActivity extends AppCompatActivity implements
-        View.OnClickListener,
-        GoogleApiClient.ConnectionCallbacks,
-        GoogleApiClient.OnConnectionFailedListener {
+        View.OnClickListener {
 
     private static final String TAG = MainActivity.class.getSimpleName();
     private static final String KEY_IS_RESOLVING = "is_resolving";
@@ -61,7 +60,7 @@ public class MainActivity extends AppCompatActivity implements
     private EditText mEmailField;
     private EditText mPasswordField;
 
-    private GoogleApiClient mCredentialsApiClient;
+    private CredentialsClient mCredentialsClient;
     private Credential mCurrentCredential;
     private boolean mIsResolving = false;
 
@@ -73,8 +72,8 @@ public class MainActivity extends AppCompatActivity implements
         setSupportActionBar((Toolbar) findViewById(R.id.toolbar));
 
         // Fields
-        mEmailField = (EditText) findViewById(R.id.edit_text_email);
-        mPasswordField = (EditText) findViewById(R.id.edit_text_password);
+        mEmailField = findViewById(R.id.edit_text_email);
+        mPasswordField = findViewById(R.id.edit_text_password);
 
         // Buttons
         findViewById(R.id.button_save_credential).setOnClickListener(this);
@@ -87,16 +86,13 @@ public class MainActivity extends AppCompatActivity implements
             mIsResolving = savedInstanceState.getBoolean(KEY_IS_RESOLVING);
         }
 
-        // Instantiate GoogleApiClient.  This is a very simple GoogleApiClient that only connects
-        // to the Auth.CREDENTIALS_API, which does not require the user to go through the sign-in
-        // flow before connecting.  If you are going to use this API with other Google APIs/scopes
-        // that require sign-in (such as Google+ or Google Drive), it may be useful to separate
-        // the CREDENTIALS_API into its own GoogleApiClient with separate lifecycle listeners.
-        mCredentialsApiClient = new GoogleApiClient.Builder(this)
-                .addConnectionCallbacks(this)
-                .enableAutoManage(this, this)
-                .addApi(Auth.CREDENTIALS_API)
+        // Instantiate client for interacting with the credentials API. For this demo
+        // application we forcibly enable the SmartLock save dialog, which is sometimes
+        // disabled when it would conflict with the Android autofill API.
+        CredentialsOptions options = new CredentialsOptions.Builder()
+                .forceEnableSaveDialog()
                 .build();
+        mCredentialsClient = Credentials.getClient(this, options);
     }
 
     @Override
@@ -150,23 +146,6 @@ public class MainActivity extends AppCompatActivity implements
         }
     }
 
-    @Override
-    public void onConnected(Bundle bundle) {
-        Log.d(TAG, "onConnected");
-        setViewsEnabled(true, R.id.button_load_credentials, R.id.button_load_hint);
-    }
-
-    @Override
-    public void onConnectionSuspended(int i) {
-        Log.d(TAG, "onConnectionSuspended:" + i);
-    }
-
-    @Override
-    public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
-        Log.d(TAG, "onConnectionFailed:" + connectionResult);
-        setViewsEnabled(false, R.id.button_load_credentials, R.id.button_load_hint);
-    }
-
     /**
      * Called when the save button is clicked.  Reads the entries in the email and password
      * fields and attempts to save a new Credential to the Credentials API.
@@ -190,19 +169,29 @@ public class MainActivity extends AppCompatActivity implements
         // your app's back end and determine that the credential is valid before saving it to the
         // Credentials backend.
         showProgress();
-        Auth.CredentialsApi.save(mCredentialsApiClient, credential).setResultCallback(
-                new ResolvingResultCallbacks<Status>(this, RC_SAVE) {
-                    @Override
-                    public void onSuccess(@NonNull Status status) {
-                        showToast("Credential Saved");
-                        hideProgress();
-                    }
 
+        mCredentialsClient.save(credential).addOnCompleteListener(
+                new OnCompleteListener<Void>() {
                     @Override
-                    public void onUnresolvableFailure(@NonNull Status status) {
-                        Log.d(TAG, "Save Failed:" + status);
-                        showToast("Credential Save Failed");
-                        hideProgress();
+                    public void onComplete(@NonNull Task<Void> task) {
+                        if (task.isSuccessful()) {
+                            showToast("Credential saved.");
+                            hideProgress();
+                            return;
+                        }
+
+                        Exception e = task.getException();
+                        if (e instanceof ResolvableApiException) {
+                            // The first time a credential is saved, the user is shown UI
+                            // to confirm the action. This requires resolution.
+                            ResolvableApiException rae = (ResolvableApiException) e;
+                            resolveResult(rae, RC_SAVE);
+                        } else {
+                            // Save failure cannot be resolved.
+                            Log.w(TAG, "Save failed.", e);
+                            showToast("Credential Save Failed");
+                            hideProgress();
+                        }
                     }
                 });
     }
@@ -238,8 +227,8 @@ public class MainActivity extends AppCompatActivity implements
                 .setAccountTypes(IdentityProviders.GOOGLE)
                 .build();
 
-        PendingIntent intent =
-                Auth.CredentialsApi.getHintPickerIntent(mCredentialsApiClient, hintRequest);
+;
+        PendingIntent intent = mCredentialsClient.getHintPickerIntent(hintRequest);
         try {
             startIntentSenderForResult(intent.getIntentSender(), RC_HINT, null, 0, 0, 0);
             mIsResolving = true;
@@ -262,26 +251,38 @@ public class MainActivity extends AppCompatActivity implements
 
         showProgress();
 
-        Auth.CredentialsApi.request(mCredentialsApiClient, request).setResultCallback(
-                new ResultCallback<CredentialRequestResult>() {
+        mCredentialsClient.request(request).addOnCompleteListener(
+                new OnCompleteListener<CredentialRequestResponse>() {
                     @Override
-                    public void onResult(@NonNull CredentialRequestResult credentialRequestResult) {
+                    public void onComplete(@NonNull Task<CredentialRequestResponse> task) {
                         hideProgress();
-                        Status status = credentialRequestResult.getStatus();
-                        if (status.isSuccess()) {
+
+                        if (task.isSuccessful()) {
                             // Successfully read the credential without any user interaction, this
                             // means there was only a single credential and the user has auto
                             // sign-in enabled.
-                            processRetrievedCredential(credentialRequestResult.getCredential(), false);
-                        } else if (status.getStatusCode() == CommonStatusCodes.RESOLUTION_REQUIRED) {
+                            processRetrievedCredential(task.getResult().getCredential(), false);
+                            return;
+                        }
+
+                        Exception e = task.getException();
+                        if (e instanceof ResolvableApiException) {
                             // This is most likely the case where the user has multiple saved
-                            // credentials and needs to pick one
-                            resolveResult(status, RC_READ);
-                        } else if (status.getStatusCode() == CommonStatusCodes.SIGN_IN_REQUIRED) {
-                            // This means only a hint is available, but we are handling that
-                            // elsewhere so no need to act here.
-                        } else {
-                            Log.w(TAG, "Unexpected status code: " + status.getStatusCode());
+                            // credentials and needs to pick one. This requires showing UI to
+                            // resolve the read request.
+                            ResolvableApiException rae = (ResolvableApiException) e;
+                            resolveResult(rae, RC_READ);
+                            return;
+                        }
+
+                        if (e instanceof ApiException) {
+                            ApiException ae = (ApiException) e;
+                            if (ae.getStatusCode() == CommonStatusCodes.SIGN_IN_REQUIRED) {
+                                // This means only a hint is available, but we are handling that
+                                // elsewhere so no need to act here.
+                            } else {
+                                Log.w(TAG, "Unexpected status code: " + ae.getStatusCode());
+                            }
                         }
                     }
                 });
@@ -299,12 +300,13 @@ public class MainActivity extends AppCompatActivity implements
 
         showProgress();
 
-        Auth.CredentialsApi.delete(mCredentialsApiClient, mCurrentCredential).setResultCallback(
-                new ResultCallback<Status>() {
+        mCredentialsClient.delete(mCurrentCredential).addOnCompleteListener(
+                new OnCompleteListener<Void>() {
                     @Override
-                    public void onResult(@NonNull Status status) {
+                    public void onComplete(@NonNull Task<Void> task) {
                         hideProgress();
-                        if (status.isSuccess()) {
+
+                        if (task.isSuccessful()) {
                             // Credential delete succeeded, disable the delete button because we
                             // cannot delete the same credential twice. Clear text fields.
                             showToast("Credential Delete Success");
@@ -315,7 +317,7 @@ public class MainActivity extends AppCompatActivity implements
                             // Credential deletion either failed or was cancelled, this operation
                             // never gives a 'resolution' so we can display the failure message
                             // immediately.
-                            Log.e(TAG, "Credential Delete: NOT OK");
+                            Log.e(TAG, "Credential Delete: NOT OK", task.getException());
                             showToast("Credential Delete Failed");
                         }
                     }
@@ -323,12 +325,12 @@ public class MainActivity extends AppCompatActivity implements
     }
 
     /**
-     * Attempt to resolve a non-successful Status from an asynchronous request.
-     * @param status the Status to resolve.
+     * Attempt to resolve a non-successful result from an asynchronous request.
+     * @param rae the ResolvableApiException to resolve.
      * @param requestCode the request code to use when starting an Activity for result,
      *                    this will be passed back to onActivityResult.
      */
-    private void resolveResult(Status status, int requestCode) {
+    private void resolveResult(ResolvableApiException rae, int requestCode) {
         // We don't want to fire multiple resolutions at once since that can result
         // in stacked dialogs after rotation or another similar event.
         if (mIsResolving) {
@@ -336,19 +338,12 @@ public class MainActivity extends AppCompatActivity implements
             return;
         }
         
-        Log.d(TAG, "Resolving: " + status);
-        if (status.hasResolution()) {
-            Log.d(TAG, "STATUS: RESOLVING");
-            try {
-                status.startResolutionForResult(MainActivity.this, requestCode);
-                mIsResolving = true;
-            } catch (IntentSender.SendIntentException e) {
-                Log.e(TAG, "STATUS: Failed to send resolution.", e);
-                hideProgress();
-            }
-        } else {
-            Log.e(TAG, "STATUS: FAIL");
-            showToast("Could Not Resolve Error");
+        Log.d(TAG, "Resolving: " + rae);
+        try {
+            rae.startResolutionForResult(MainActivity.this, requestCode);
+            mIsResolving = true;
+        } catch (IntentSender.SendIntentException e) {
+            Log.e(TAG, "STATUS: Failed to send resolution.", e);
             hideProgress();
         }
     }
