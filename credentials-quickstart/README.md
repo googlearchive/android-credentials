@@ -7,7 +7,7 @@ https://developers.google.com/identity/smartlock-passwords/android/get-started
 
 ## Optional
 ### Determining the SHA512 Hash of Your Keystore
-This applicaiton demonstrates the use and verification of ID Tokens retrieved from Credentials which
+This application demonstrates the use and verification of ID Tokens retrieved from Credentials which
 is a great way to authenticate your client applications with your backend server. You will need to
 determine the SHA512 hash of your application and update `MockServer.java` accordingly.
 
